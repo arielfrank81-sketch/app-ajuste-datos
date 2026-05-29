@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import io, base64
 
 st.set_page_config(page_title="FitDistPro", layout="wide")
-st.title("📊 FitDistPro - Ajuste de Distribuciones de Probabilidad")
+st.title(" FitDistPro - Ajuste de Distribuciones de Probabilidad")
 
 # 1️⃣ CARGA DE DATOS
 st.sidebar.header(" Carga de Datos")
@@ -30,7 +30,7 @@ st.sidebar.metric("Registros válidos", len(data))
 # Detección automático
 is_discrete = np.all(np.mod(data, 1) == 0) and len(data) > 10
 tipo = "Discreto (conteos)" if is_discrete else "Continuo (mediciones)"
-st.sidebar.info(f"🔍 Tipo detectado: {tipo}")
+st.sidebar.info(f" Tipo detectado: {tipo}")
 
 # 2️⃣ DEFINICIÓN DE DISTRIBUCIONES
 def fit_distribution(dist_name, data):
@@ -202,8 +202,8 @@ df_res = df_res[cols_order]
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("🏆 Ranking de Ajuste (menor AIC = mejor)")
-    st.dataframe(df_res.round(4), use_container_width=True)
+    st.subheader(" Ranking de Ajuste (menor AIC = mejor)")
+    st.dataframe(df_res.round(4).style.set_properties(**{'max-width': '120px', 'text-align': 'center'}), use_container_width=True)
 
 with col2:
     st.subheader("📊 Histograma + Ajuste (Top 1)")
