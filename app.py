@@ -9,7 +9,7 @@ st.set_page_config(page_title="FitDistPro", layout="wide")
 st.title("📊 FitDistPro - Ajuste de Distribuciones de Probabilidad")
 
 # 1️⃣ CARGA DE DATOS
-st.sidebar.header("📥 Carga de Datos")
+st.sidebar.header(" Carga de Datos")
 upload = st.sidebar.file_uploader("CSV o Excel", type=["csv", "xlsx", "xls"])
 paste_data = st.sidebar.text_area("O pega datos separados por comas o saltos de línea")
 
@@ -35,55 +35,82 @@ st.sidebar.info(f"🔍 Tipo detectado: {tipo}")
 # 2️⃣ DEFINICIÓN DE DISTRIBUCIONES
 def fit_distribution(dist_name, data):
     try:
-        if dist_name == "Normal":
-            params = stats.norm.fit(data)
-            dist = stats.norm(*params)
-        elif dist_name == "Lognormal":
-            params = stats.lognorm.fit(data, floc=0)
-            dist = stats.lognorm(*params)
-        elif dist_name == "Weibull":
-            params = stats.weibull_min.fit(data, floc=0)
-            dist = stats.weibull_min(*params)
-        elif dist_name == "Gamma":
-            params = stats.gamma.fit(data, floc=0)
-            dist = stats.gamma(*params)
-        elif dist_name == "Exponencial":
-            params = stats.expon.fit(data, floc=0)
-            dist = stats.expon(*params)
-        elif dist_name == "Beta":
-            params = stats.beta.fit(data, floc=data.min(), scale=data.max()-data.min())
-            dist = stats.beta(*params)
-        elif dist_name == "Logística":
-            params = stats.logistic.fit(data)
-            dist = stats.logistic(*params)
-        elif dist_name == "Gumbel":
-            params = stats.gumbel_r.fit(data)
-            dist = stats.gumbel_r(*params)
-        elif dist_name == "Pareto":
-            params = stats.pareto.fit(data, floc=data.min())
-            dist = stats.pareto(*params)
-        elif is_discrete:
-            if dist_name == "Poisson":
-                params = (data.mean(),)
-                dist = stats.poisson(*params, loc=0)
-            elif dist_name == "Binomial":
-                n = max(data.max(), 10)
-                p = data.mean() / n
-                params = (n, p)
-                dist = stats.binom(*params, loc=0)
-            elif dist_name == "Binomial Negativa":
-                params = stats.nbinom.fit(data, floc=0)
-                dist = stats.nbinom(*params)
-            elif dist_name == "Geométrica":
-                params = stats.geom.fit(data, floc=0)
-                dist = stats.geom(*params)
-            elif dist_name == "Bernoulli":
-                p = data.mean()
-                params = (p,)
-                dist = stats.bernoulli(*params, loc=0)
-            else: return None
-        else:
+        # Mapeo de nombres a funciones de scipy
+        dist_map = {
+            "Normal": stats.norm,
+            "Lognormal": stats.lognorm,
+            "Weibull": stats.weibull_min,
+            "Gamma": stats.gamma,
+            "Exponencial": stats.expon,
+            "Beta": stats.beta,
+            "Logística": stats.logistic,
+            "Gumbel": stats.gumbel_r,
+            "Pareto": stats.pareto,
+            "Poisson": stats.poisson,
+            "Binomial": stats.binom,
+            "Binomial Negativa": stats.nbinom,
+            "Geométrica": stats.geom,
+            "Bernoulli": stats.bernoulli
+        }
+        
+        if dist_name not in dist_map:
             return None
+            
+        dist_obj = dist_map[dist_name]
+        
+        # Ajuste de parámetros con manejo de errores
+        if dist_name in ["Beta", "Pareto"]:
+            params = dist_obj.fit(data, floc=data.min(), scale=max(data.max()-data.min(), 1))
+        elif dist_name in ["Lognormal", "Weibull", "Gamma", "Exponencial"]:
+            params = dist_obj.fit(data, floc=0)
+        elif dist_name in ["Binomial"]:
+            n = max(int(data.max()), 10)
+            p = min(data.mean() / n, 0.99)
+            params = (n, p, 0)
+        else:
+            params = dist_obj.fit(data)
+        
+        dist = dist_obj(*params)
+        k = len(params) if hasattr(params, '__len__') else 1
+        n = len(data)
+        
+        # Calcular métricas
+        if dist_name in ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli"]:
+            # Distribuciones discretas
+            loglik = float(np.sum(dist.logpmf(data)))
+            # Chi² para discretas
+            unique_vals = np.unique(data)
+            observed = np.array([np.sum(data == x) for x in unique_vals])
+            expected = np.array([dist.pmf(x) * n for x in unique_vals])
+            expected = np.maximum(expected, 1e-8)
+            chi2, p_chi2 = stats.chisquare(observed, expected)
+            ks_stat, ks_p = 0, 0  # KS no aplica bien a discretas
+        else:
+            # Distribuciones continuas
+            loglik = float(np.sum(dist.logpdf(data)))
+            ks_stat, ks_p = stats.kstest(data, dist.cdf)
+            # Chi² aproximado
+            counts, edges = np.histogram(data, bins='auto')
+            expected = n * np.diff(dist.cdf(edges))
+            expected = np.maximum(expected, 1e-8)
+            chi2, p_chi2 = stats.chisquare(counts, expected)
+        
+        aic = float(2*k - 2*loglik)
+        bic = float(k*np.log(n) - 2*loglik)
+        
+        return {
+            "Distribución": dist_name,
+            "Parámetros": tuple(round(float(p), 4) for p in params),
+            "Log-Likelihood": round(loglik, 2),
+            "AIC": round(aic, 2),
+            "BIC": round(bic, 2),
+            "K-S p-valor": round(float(ks_p), 4),
+            "Chi² p-valor": round(float(p_chi2), 4),
+            "dist": dist
+        }
+    except Exception as e:
+        print(f"Error en {dist_name}: {str(e)}")
+        return None
 
         # Métricas
         k = len(params)
@@ -137,11 +164,11 @@ df_res.rename(columns={"Distribución": "Rank"}, inplace=False)
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("🏆 Ranking de Ajuste (menor AIC = mejor)")
+    st.subheader(" Ranking de Ajuste (menor AIC = mejor)")
     st.dataframe(df_res.round(4), use_container_width=True)
 
 with col2:
-    st.subheader("📈 Histograma + Densidad (Top 1)")
+    st.subheader(" Histograma + Densidad (Top 1)")
     best = results[0]["dist"]
     x = np.linspace(data.min(), data.max(), 200)
     fig = go.Figure()
@@ -152,14 +179,14 @@ with col2:
 
 # 4️⃣ REPORTE EN LENGUAJE NATURAL
 st.markdown("---")
-st.subheader("📝 Reporte Automático")
+st.subheader(" Reporte Automático")
 top = df_res.iloc[0]
-st.success(f"✅ **Conclusión**: La distribución `{top['Distribución']}` es la más adecuada para tus datos. "
+st.success(f" **Conclusión**: La distribución `{top['Distribución']}` es la más adecuada para tus datos. "
            f"AIC={top['AIC']:.2f}, BIC={top['BIC']:.2f}. "
            f"{'El p-valor de Chi² ('+str(round(top['Chi² p-valor'],3))+') > 0.05 indica un buen ajuste.' if is_discrete else 'El p-valor de K-S ('+str(round(top['K-S p-valor'],3))+') > 0.05 indica un buen ajuste.'}")
 
 # 5️⃣ EXPORTACIÓN
-if st.button("📥 Descargar Reporte CSV"):
+if st.button(" Descargar Reporte CSV"):
     csv = df_res.drop(columns=["Parámetros"]).to_csv(index=False)
     b64 = base64.b64encode(csv.encode()).decode()
     href = f'<a href="data:file/csv;base64,{b64}" download="resultados_ajuste.csv">Descargar CSV</a>'
