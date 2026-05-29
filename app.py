@@ -169,51 +169,77 @@ def fit_distribution(dist_name, data):
         print(f"Error en {dist_name}: {str(e)}")
         return None
 
-# Selección automática
-# Selección automática
+# Selección automática según tipo de dato
 if is_discrete:
-    # Solo distribuciones discretas
-    candidates = ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli", "Hipergeométrica"]
+    candidates = ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli"]
 else:
-    # Solo distribuciones continuas
     candidates = ["Normal", "Lognormal", "Weibull", "Gamma", "Exponencial", "Beta", "Logística", "Gumbel", "Pareto"]
 
 results = [fit_distribution(d, data) for d in candidates]
 results = [r for r in results if r is not None]
 
-# Ranking por AIC
-df_res = pd.DataFrame(results).drop(columns=["dist"]).sort_values("AIC")
-df_res.index = range(1, len(df_res)+1)
-df_res.rename(columns={"Distribución": "Rank"}, inplace=False)
+# Ordenar por AIC (menor = mejor)
+results.sort(key=lambda x: x['AIC'])
 
-# 3️⃣ VISUALIZACIÓN Y RESULTADOS
+# Crear DataFrame
+df_res = pd.DataFrame(results).drop(columns=["dist"])
+df_res.index = df_res.index + 1  # Ranking 1, 2, 3...
+
+# Adaptar columnas de pruebas según tipo de dato
+if is_discrete:
+    df_res["Prueba Estadística"] = "Chi-Cuadrado"
+    df_res["p-valor"] = df_res["Chi² p-valor"]
+    df_res.drop(columns=["K-S p-valor", "Chi² p-valor"], inplace=True)
+else:
+    df_res["Prueba Estadística"] = "Kolmogorov-Smirnov"
+    df_res["p-valor"] = df_res["K-S p-valor"]
+    df_res.drop(columns=["K-S p-valor", "Chi² p-valor"], inplace=True)
+
+# Orden final de columnas
+cols_order = ["Distribución", "Parámetros", "Log-Likelihood", "AIC", "BIC", "Prueba Estadística", "p-valor"]
+df_res = df_res[cols_order]
+
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader(" Ranking de Ajuste (menor AIC = mejor)")
+    st.subheader("🏆 Ranking de Ajuste (menor AIC = mejor)")
     st.dataframe(df_res.round(4), use_container_width=True)
 
 with col2:
-    st.subheader(" Histograma + Densidad (Top 1)")
-    best = results[0]["dist"]
-    x = np.linspace(data.min(), data.max(), 200)
-    fig = go.Figure()
-    fig.add_trace(go.Histogram(x=data, nbinsx=30, name="Datos", opacity=0.6, histnorm='probability density'))
-    fig.add_trace(go.Scatter(x=x, y=best.pdf(x) if not is_discrete else best.pmf(x), name=f"Mejor ajuste: {results[0]['Distribución']}", line=dict(color='red', width=3)))
-    fig.update_layout(barmode='overlay', template="plotly_white")
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("📊 Histograma + Ajuste (Top 1)")
+    if len(results) > 0:
+        best = results[0]
+        dist = best["dist"]
+        dist_name = best["Distribución"]
+        
+        fig = go.Figure()
+        # Histograma de datos reales
+        fig.add_trace(go.Histogram(x=data, nbinsx=30, name="Datos", opacity=0.6, histnorm='probability density'))
+        
+        if is_discrete:
+            # Distribuciones discretas: usar PMF (barras)
+            x_vals = np.arange(int(data.min()), int(data.max()) + 1)
+            y_vals = dist.pmf(x_vals)
+            fig.add_trace(go.Bar(x=x_vals, y=y_vals, name=f"Top 1: {dist_name}", opacity=0.8))
+        else:
+            # Distribuciones continuas: usar PDF (línea)
+            x_vals = np.linspace(data.min(), data.max(), 200)
+            y_vals = dist.pdf(x_vals)
+            fig.add_trace(go.Scatter(x=x_vals, y=y_vals, name=f"Top 1: {dist_name}", line=dict(color='red', width=3)))
+            
+        fig.update_layout(barmode='overlay', template="plotly_white", xaxis_title="Valor", yaxis_title="Densidad / Probabilidad")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("⚠️ No se pudo ajustar ninguna distribución con estos datos.")
 
-# 4️⃣ REPORTE EN LENGUAJE NATURAL
+# REPORTE AUTOMÁTICO
 st.markdown("---")
-st.subheader(" Reporte Automático")
-top = df_res.iloc[0]
-st.success(f" **Conclusión**: La distribución `{top['Distribución']}` es la más adecuada para tus datos. "
-           f"AIC={top['AIC']:.2f}, BIC={top['BIC']:.2f}. "
-           f"{'El p-valor de Chi² ('+str(round(top['Chi² p-valor'],3))+') > 0.05 indica un buen ajuste.' if is_discrete else 'El p-valor de K-S ('+str(round(top['K-S p-valor'],3))+') > 0.05 indica un buen ajuste.'}")
-
-# 5️⃣ EXPORTACIÓN
-if st.button(" Descargar Reporte CSV"):
-    csv = df_res.drop(columns=["Parámetros"]).to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="resultados_ajuste.csv">Descargar CSV</a>'
-    st.markdown(href, unsafe_allow_html=True)
+st.subheader("📝 Conclusión Estadística")
+if len(results) > 0:
+    top = df_res.iloc[0]
+    test = top["Prueba Estadística"]
+    p = top["p-valor"]
+    msg_ajuste = "✅ Ajuste ACEPTADO" if p > 0.05 else "❌ Ajuste RECHAZADO"
+    st.success(f"**Distribución Ganadora**: `{top['Distribución']}` | AIC: {top['AIC']:.2f} | BIC: {top['BIC']:.2f}\n"
+               f"**{test}**: p-valor = {p:.4f} → {msg_ajuste}\n"
+               f"💡 *Parámetros estimados: {top['Parámetros']}*")
