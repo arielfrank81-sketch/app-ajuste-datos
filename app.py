@@ -93,22 +93,29 @@ def fit_distribution(dist_name, data):
             params = (n_trials, p, 0)  # n, p, loc
             
         elif dist_name == "Binomial Negativa":
-            # Método manual: estimar por método de momentos
             try:
-                mean_val = data.mean()
-                var_val = data.var()
-                
-                if var_val > mean_val:  # Sobredispersión (requerido para nbinom)
-                    # Estimación por método de momentos
-                    r = (mean_val ** 2) / (var_val - mean_val)
-                    p = mean_val / var_val
-                    r = max(r, 0.1)  # Evitar valores muy pequeños
-                    p = min(max(p, 0.01), 0.99)
-                    params = (r, p, 0)  # r, p, loc
-                else:
-                    # Si var <= mean, usar Poisson como fallback
+                mu = data.mean()
+                var = data.var()
+                # NB solo aplica si hay sobredispersión (var > media)
+                if var <= mu:
                     return None
-            except:
+                
+                # Estimación por momentos (fórmula exacta para nbinom)
+                p = mu / var
+                r = mu * p / (1 - p)
+                
+                # Límites de seguridad numérica
+                r = max(r, 0.5)
+                p = min(max(p, 0.01), 0.99)
+                
+                # Validar que scipy acepta los parámetros antes de continuar
+                test_dist = stats.nbinom(r, p, loc=0)
+                if np.any(np.isnan(test_dist.pmf(data[:5]))):
+                    return None
+                    
+                params = (r, p, 0)
+            except Exception as e:
+                # Para depuración: print(e)  # Se verá en los Logs de Streamlit
                 return None
             
         elif dist_name == "Geométrica":
