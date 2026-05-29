@@ -206,10 +206,12 @@ def fit_distribution(dist_name, data):
         print(f"Error en {dist_name}: {str(e)}")
         return None
 
-# Selección automática según tipo de dato
+# Selección automática ESTRICTA
 if is_discrete:
+    # Solo distribuciones discretas del profesor
     candidates = ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli"]
 else:
+    # Solo distribuciones continuas
     candidates = ["Normal", "Lognormal", "Weibull", "Gamma", "Exponencial", "Beta", "Logística", "Gumbel", "Pareto"]
 
 results = [fit_distribution(d, data) for d in candidates]
@@ -267,16 +269,16 @@ with col2:
         fig.update_layout(barmode='overlay', template="plotly_white", xaxis_title="Valor", yaxis_title="Densidad / Probabilidad")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("⚠️ No se pudo ajustar ninguna distribución con estos datos.")
+        st.warning(" No se pudo ajustar ninguna distribución con estos datos.")
 
 # REPORTE AUTOMÁTICO
 st.markdown("---")
-st.subheader("📝 Conclusión Estadística")
+st.subheader("Conclusión Estadística")
 if len(results) > 0:
     top = df_res.iloc[0]
     test = top["Prueba Estadística"]
     p = top["p-valor"]
-    msg_ajuste = "✅ Ajuste ACEPTADO" if p > 0.05 else "❌ Ajuste RECHAZADO"
+    msg_ajuste = " Ajuste ACEPTADO" if p > 0.05 else " Ajuste RECHAZADO"
     st.success(f"**Distribución Ganadora**: `{top['Distribución']}` | AIC: {top['AIC']:.2f} | BIC: {top['BIC']:.2f}\n"
                f"**{test}**: p-valor = {p:.4f} → {msg_ajuste}\n"
                f"💡 *Parámetros estimados: {top['Parámetros']}*")
