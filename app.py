@@ -93,8 +93,23 @@ def fit_distribution(dist_name, data):
             params = (n_trials, p, 0)  # n, p, loc
             
         elif dist_name == "Binomial Negativa":
-            # Binomial negativa: r éxitos, p probabilidad
-            params = stats.nbinom.fit(data, floc=0)
+            # Método manual: estimar por método de momentos
+            try:
+                mean_val = data.mean()
+                var_val = data.var()
+                
+                if var_val > mean_val:  # Sobredispersión (requerido para nbinom)
+                    # Estimación por método de momentos
+                    r = (mean_val ** 2) / (var_val - mean_val)
+                    p = mean_val / var_val
+                    r = max(r, 0.1)  # Evitar valores muy pequeños
+                    p = min(max(p, 0.01), 0.99)
+                    params = (r, p, 0)  # r, p, loc
+                else:
+                    # Si var <= mean, usar Poisson como fallback
+                    return None
+            except:
+                return None
             
         elif dist_name == "Geométrica":
             # Método manual más estable: p = 1/mean
