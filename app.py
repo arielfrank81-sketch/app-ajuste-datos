@@ -20,7 +20,23 @@ if upload is not None:
         df = pd.read_excel(upload)
     data = df.iloc[:, 0].dropna().values
 elif paste_data:
-    data = np.array([float(x.replace(",", ".")) for x in paste_data.split() if x])
+    # Limpiar y procesar datos pegados
+    raw_data = paste_data.replace("\n", ",").replace(";", ",").replace("  ", " ").strip()
+    raw_list = [x.strip() for x in raw_data.split(",") if x.strip()]
+    
+    # Convertir a float con manejo de errores
+    clean_data = []
+    for x in raw_list:
+        try:
+            clean_data.append(float(x.replace(",", ".")))
+        except ValueError:
+            pass  # Ignorar valores no numéricos
+    
+    data = np.array(clean_data)
+    
+    if len(data) == 0:
+        st.error("❌ No se encontraron datos numéricos válidos. Verifica el formato.")
+        st.stop()
 else:
     data = np.random.normal(loc=50, scale=10, size=200)  # Demo
     st.warning("Usando datos de demostración. Sube tus propios datos.")
