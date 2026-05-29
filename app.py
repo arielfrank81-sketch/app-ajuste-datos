@@ -97,11 +97,14 @@ def fit_distribution(dist_name, data):
             params = stats.nbinom.fit(data, floc=0)
             
         elif dist_name == "Geométrica":
-            # Geométrica: intentos hasta primer éxito
+            # Método manual más estable: p = 1/mean
             try:
-                params = stats.geom.fit(data, floc=1)
+                mean_val = data.mean()
+                p = 1.0 / mean_val if mean_val > 0 else 0.5
+                p = min(max(p, 0.01), 0.99)  # Limitar a [0.01, 0.99]
+                params = (p, 0)  # p, loc
             except:
-                params = stats.geom.fit(data)
+                return None
             
         elif dist_name == "Hipergeométrica":
             # Hipergeométrica: M población total, n éxitos en población, N muestras
