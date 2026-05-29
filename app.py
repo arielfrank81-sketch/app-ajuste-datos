@@ -97,8 +97,11 @@ def fit_distribution(dist_name, data):
             params = stats.nbinom.fit(data, floc=0)
             
         elif dist_name == "Geométrica":
-            # Geométrica: intentos hasta primer éxito
-            params = stats.geom.fit(data, floc=0)
+    # scipy.geom cuenta ensayos desde 1. Forzamos loc=1 para evitar errores de dominio
+    try:
+        params = stats.geom.fit(data, floc=1)
+    except:
+        params = stats.geom.fit(data)  # fallback seguro
             
         elif dist_name == "Hipergeométrica":
             # Hipergeométrica: M población total, n éxitos en población, N muestras
