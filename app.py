@@ -35,8 +35,9 @@ st.sidebar.info(f"🔍 Tipo detectado: {tipo}")
 # 2️⃣ DEFINICIÓN DE DISTRIBUCIONES
 def fit_distribution(dist_name, data):
     try:
-        # Mapeo de nombres a funciones de scipy
+        # Mapeo de distribuciones
         dist_map = {
+            # Continuas
             "Normal": stats.norm,
             "Lognormal": stats.lognorm,
             "Weibull": stats.weibull_min,
@@ -46,55 +47,111 @@ def fit_distribution(dist_name, data):
             "Logística": stats.logistic,
             "Gumbel": stats.gumbel_r,
             "Pareto": stats.pareto,
+            # Discretas
             "Poisson": stats.poisson,
             "Binomial": stats.binom,
             "Binomial Negativa": stats.nbinom,
             "Geométrica": stats.geom,
-            "Bernoulli": stats.bernoulli
+            "Bernoulli": stats.bernoulli,
+            "Hipergeométrica": stats.hypergeom
         }
         
         if dist_name not in dist_map:
             return None
             
         dist_obj = dist_map[dist_name]
-        
-        # Ajuste de parámetros con manejo de errores
-        if dist_name in ["Beta", "Pareto"]:
-            params = dist_obj.fit(data, floc=data.min(), scale=max(data.max()-data.min(), 1))
-        elif dist_name in ["Lognormal", "Weibull", "Gamma", "Exponencial"]:
-            params = dist_obj.fit(data, floc=0)
-        elif dist_name in ["Binomial"]:
-            n = max(int(data.max()), 10)
-            p = min(data.mean() / n, 0.99)
-            params = (n, p, 0)
-        else:
-            params = dist_obj.fit(data)
-        
-        dist = dist_obj(*params)
-        k = len(params) if hasattr(params, '__len__') else 1
         n = len(data)
         
-        # Calcular métricas
-        if dist_name in ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli"]:
+        # === AJUSTE DE PARÁMETROS ===
+        if dist_name == "Bernoulli":
+            # Bernoulli: solo éxitos/fracasos (0 o 1)
+            if not np.all(np.isin(data, [0, 1])):
+                return None  # Solo funciona con 0s y 1s
+            p = data.mean()
+            params = (p, 0)  # p, loc
+            
+        elif dist_name == "Binomial":
+            # Binomial: n ensayos, p probabilidad
+            n_trials = max(int(data.max()), 10)  # Estimamos n
+            p = min(data.mean() / n_trials, 0.99)
+            params = (n_trials, p, 0)  # n, p, loc
+            
+        elif dist_name == "Binomial Negativa":
+            # Binomial negativa: r éxitos, p probabilidad
+            params = stats.nbinom.fit(data, floc=0)
+            
+        elif dist_name == "Geométrica":
+            # Geométrica: intentos hasta primer éxito
+            params = stats.geom.fit(data, floc=0)
+            
+        elif dist_name == "Hipergeométrica":
+            # Hipergeométrica: M población total, n éxitos en población, N muestras
+            # Estimación simplificada
+            M = max(int(data.max() * 2), int(data.mean() * 10), 100)  # Población total
+            n = max(int(data.mean() * 2), 10)  # Éxitos en población
+            N = max(int(n * 1.5), 5)  # Tamaño de muestra
+            params = (M, n, N, 0)  # M, n, N, loc
+            
+        elif dist_name == "Poisson":
+            # Poisson: lambda = media
+            mu = data.mean()
+            params = (mu, 0)  # mu, loc
+            
+        else:
+            # Distribuciones continuas
+            if dist_name in ["Beta", "Pareto"]:
+                params = dist_obj.fit(data, floc=data.min(), scale=max(data.max()-data.min(), 1))
+            elif dist_name in ["Lognormal", "Weibull", "Gamma", "Exponencial"]:
+                params = dist_obj.fit(data, floc=0)
+            else:
+                params = dist_obj.fit(data)
+        
+        # Crear objeto de distribución
+        dist = dist_obj(*params)
+        k = len(params) if hasattr(params, '__len__') else 1
+        
+        # === CÁLCULO DE MÉTRICAS ===
+        if dist_name in ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli", "Hipergeométrica"]:
             # Distribuciones discretas
-            loglik = float(np.sum(dist.logpmf(data)))
+            try:
+                loglik = float(np.sum(dist.logpmf(data)))
+            except:
+                return None
+                
             # Chi² para discretas
             unique_vals = np.unique(data)
             observed = np.array([np.sum(data == x) for x in unique_vals])
-            expected = np.array([dist.pmf(x) * n for x in unique_vals])
-            expected = np.maximum(expected, 1e-8)
-            chi2, p_chi2 = stats.chisquare(observed, expected)
+            try:
+                expected = np.array([dist.pmf(x) * n for x in unique_vals])
+                expected = np.maximum(expected, 1e-8)
+                chi2, p_chi2 = stats.chisquare(observed, expected)
+            except:
+                chi2, p_chi2 = 0, 1.0
+                
             ks_stat, ks_p = 0, 0  # KS no aplica bien a discretas
+            
         else:
             # Distribuciones continuas
-            loglik = float(np.sum(dist.logpdf(data)))
-            ks_stat, ks_p = stats.kstest(data, dist.cdf)
+            try:
+                loglik = float(np.sum(dist.logpdf(data)))
+            except:
+                return None
+                
+            try:
+                ks_stat, ks_p = stats.kstest(data, dist.cdf)
+            except:
+                ks_stat, ks_p = 0, 0
+                
             # Chi² aproximado
-            counts, edges = np.histogram(data, bins='auto')
-            expected = n * np.diff(dist.cdf(edges))
-            expected = np.maximum(expected, 1e-8)
-            chi2, p_chi2 = stats.chisquare(counts, expected)
+            try:
+                counts, edges = np.histogram(data, bins='auto')
+                expected = n * np.diff(dist.cdf(edges))
+                expected = np.maximum(expected, 1e-8)
+                chi2, p_chi2 = stats.chisquare(counts, expected)
+            except:
+                chi2, p_chi2 = 0, 1.0
         
+        # Calcular AIC y BIC
         aic = float(2*k - 2*loglik)
         bic = float(k*np.log(n) - 2*loglik)
         
@@ -112,45 +169,14 @@ def fit_distribution(dist_name, data):
         print(f"Error en {dist_name}: {str(e)}")
         return None
 
-        # Métricas
-        k = len(params)
-        if is_discrete:
-            loglik = np.sum(dist.logpmf(data))
-            # Chi2 para discretas
-            observed = np.array([np.sum(data==x) for x in np.unique(data)])
-            expected = np.array([dist.pmf(x)*len(data) for x in np.unique(data)])
-            chi2, p_chi2 = stats.chisquare(observed, expected)
-            ks_stat, ks_p = 0, 0  # KS no aplica bien a discretas
-        else:
-            loglik = np.sum(dist.logpdf(data))
-            ks_stat, ks_p = stats.kstest(data, dist.cdf)
-            # Chi2 aproximado para continuas
-            hist, edges = np.histogram(data, bins='auto')
-            expected = len(data) * np.diff(dist.cdf(edges))
-            chi2, p_chi2 = stats.chisquare(hist, expected+1e-8)
-
-        aic = 2*k - 2*loglik
-        bic = k*np.log(len(data)) - 2*loglik
-
-        return {
-            "Distribución": dist_name,
-            "Parámetros": params,
-            "Log-Likelihood": loglik,
-            "AIC": aic,
-            "BIC": bic,
-            "K-S p-valor": ks_p,
-            "Chi² p-valor": p_chi2,
-            "dist": dist
-        }
-    except:
-        return None
-
 # Selección automática
-candidates = ["Normal", "Lognormal", "Weibull", "Gamma", "Exponencial", "Logística", "Gumbel"]
-if not is_discrete:
-    candidates += ["Beta", "Pareto"]
+# Selección automática
+if is_discrete:
+    # Solo distribuciones discretas
+    candidates = ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli", "Hipergeométrica"]
 else:
-    candidates += ["Poisson", "Binomial", "Binomial Negativa", "Geométrica", "Bernoulli"]
+    # Solo distribuciones continuas
+    candidates = ["Normal", "Lognormal", "Weibull", "Gamma", "Exponencial", "Beta", "Logística", "Gumbel", "Pareto"]
 
 results = [fit_distribution(d, data) for d in candidates]
 results = [r for r in results if r is not None]
